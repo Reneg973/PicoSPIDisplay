@@ -20,11 +20,12 @@ public:
   {
     reset();
   }
-  
-  void reset()
+
+  void reset(std::function<void()> endFunc = {})
   {
     if (_endFunc)
       _endFunc();
+    _endFunc = endFunc;
   }
 
 private:
@@ -46,11 +47,14 @@ public:
   void init();
 
   void waitTransfer();
-  void setStartLine(uint8_t l);
-  
+
+  void setStartLine(uint l);
+
   // \param wait if false, doesn't wait for finish, CPU can work on other things while transferring. It is advisable to call \see waitTransfer() before the next communication with the display starts
   // color fmt:[15:11]=b; [10:5]=g; [0:4]=r
   void fillRect(uint x0, uint y0, uint x1, uint y1, uint16_t color, bool wait=true);
+
+  void bitblt(uint x0, uint y0, uint x1, uint y1, uint16_t const* data, bool wait=true);
 
   enum StandByType
   {
@@ -68,8 +72,8 @@ public:
     SlowestSpeed =3
   };
   void horizontalScroll(uint8_t numSteps, uint8_t startRow, uint8_t numRows, ScrollSpeed spd);
-  
+
 private:
 
-  char _priv[36];
+  char _priv[44];
 };

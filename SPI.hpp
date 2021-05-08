@@ -2,6 +2,7 @@
 
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
+#include <initializer_list>
 
 #if 0
 class SPIInst
@@ -54,28 +55,9 @@ public:
     spi_write_blocking(*this, &v, sizeof(v));
   }
 
-  void write(uint8_t v1, uint8_t v2)
+  void write(std::initializer_list<uint8_t> const& data)
   {
-    uint8_t v[] { v1, v2 };
-    spi_write_blocking(*this, v, sizeof(v));
-  }
-  
-  void write(uint8_t v1, uint8_t v2, uint8_t v3)
-  {
-    uint8_t v[] { v1, v2, v3 };
-    spi_write_blocking(*this, v, sizeof(v));
-  }
-
-  void write(uint8_t v1, uint8_t v2, uint8_t v3, uint8_t v4)
-  {
-    uint8_t v[] { v1, v2, v3, v4 };
-    spi_write_blocking(*this, v, sizeof(v));
-  }
-  
-  void write(uint8_t v1, uint8_t v2, uint8_t v3, uint8_t v4, uint8_t v5, uint8_t v6, uint8_t v7)
-  {
-    uint8_t v[] { v1, v2, v3, v4, v5, v6, v7 };
-    spi_write_blocking(*this, v, sizeof(v));
+    spi_write_blocking(*this, data.begin(), data.size());
   }
 
   void waitTransfer() const
