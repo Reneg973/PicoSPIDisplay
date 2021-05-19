@@ -21,13 +21,7 @@
 #define SPI_DC_DISPLAY    17
 #define SPI_RST_DISPLAY   16
 
-static bool bOn = false;
-bool heartbeat_timer(repeating_timer_t *rt)
-{
-  gpio_put(PICO_DEFAULT_LED_PIN, bOn);
-  bOn = !bOn;
-  return true;
-}
+extern void initHeartBeat();
 
 
 template<typename T, uint8_t ...>
@@ -37,7 +31,7 @@ public:
   Bus()
   {
   }
-  
+
   Bus operator <<(T const& v)
   {
     return *this;
@@ -65,8 +59,9 @@ constexpr uint trueHSV(int angle)
 
 uint RGB24ToRGB565(uint rgb24)
 {
-  //  return (((rgb24 >> 16) * 0x1F / 0xFF) << 11) | (((rgb24 & 0xFF) * 0x1F / 0xFF) << 3) | (((((rgb24 >> 8) & 0xFF) * 0x3F / 0xFF) & 0x3F) << 0);
-    return (((rgb24 >> 16) * 0x1F / 0xFF) << 11) | (((rgb24 & 0xFF) * 0x1F / 0xFF) << 0) | ((((rgb24 >> 8) & 0xFF) * 0x3F / 0xFF) << 5);
+  return (((rgb24 >> 16) * 0x1F / 0xFF) << 11)
+       | ((((rgb24 >> 8) & 0xFF) * 0x3F / 0xFF) << 5)
+       | ((rgb24 & 0xFF) * 0x1F / 0xFF);
 }
 
 uint8_t v[3][2] = { 
@@ -102,45 +97,87 @@ void core1()
 }
 
 int main() {
+  sleep_ms(20); // for SPI display to suppress bouncing effects
   // Enable UART so we can print status output
 //  change_peri_clk();
   stdio_init_all();
 //  multicore_launch_core1(core1);
   vreg_set_voltage(VREG_VOLTAGE_0_90);
-    setup_default_uart();
-  sleep_ms(10);
+//    setup_default_uart();
+
+  initHeartBeat();
   disp.init();
 
-#ifndef PICO_DEFAULT_LED_PIN
-#warning PICO_DEFAULT_LED_PIN not defined
-#else
-  struct repeating_timer timer;
-  gpio_init(PICO_DEFAULT_LED_PIN);
-  gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-  add_repeating_timer_ms(-1000, heartbeat_timer, NULL, &timer);
-#endif
-  
+
   printf("initialized\n");
-  printf("Measured peri freq: %u kHz\n", frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_PERI));
+  printf("Measured SPI freq: %u kHz\n", frequency_count_khz(CLOCKS_FC0_SRC_VALUE_CLK_PERI));
   printf("set baudrate = %d\n", spi_get_baudrate(spi0));
 
-//  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x02<<11); y0 += 13;
-//  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x04<<11); y0 += 13;
-//  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x08<<11); y0 += 13;
+  disp.setFillColor(0x12 << 11);
+  for (uint i = 0; true; i = (i + 1) % 4)
+  {
+    printf("Rotation = %d\n", i);
+    disp.setRotation(static_cast<SSD1351::Rotation>(static_cast<int>(SSD1351::Rotation::DEGREE_0) + i));
+
+    disp.setDrawColor(0);
+    disp.drawLine(10, 40, 60, 40, 0);
+    disp.drawLine(60, 40, 60, 30, 0);
+    disp.drawLine(60, 30, 110, 55, 0);
+    disp.drawLine(110, 55, 60, 80, 0);
+    disp.drawLine(60, 80, 60, 70, 0);
+    disp.drawLine(60, 70, 10, 70, 0);
+    disp.drawLine(10, 70, 10, 40, 0);
+    sleep_ms(100);
+//    i = 3;
+  }
+
+  while (true) ;
+  for (uint i = 0; true; ++i)
+  {
+    i = i % 4;
+    y0 = 0;
+    disp.setRotation((SSD1351::Rotation)i, true);
+    disp.setFillColor(0x12 << 11);
+    disp.fillRect(0, y0, RIGHTPOS/2, y0 + 6); y0 += 13;
+    disp.setFillColor(0x14 << 0);
+    disp.fillRect(0, y0, RIGHTPOS, y0 + 6); y0 += 13;
+    sleep_ms(80);
+  }
+
+  while (true) ;
+  bool a = false;
+
+  a = y1;
+  printf("the value of a is %d\n", a);
+  disp.setWindow(10, 10, 49, 49);
+  {
+    auto pixelPath = disp.beginPixelPath();
+    for (int i = 0; i < 40 * 40; ++i) {
+      disp.setDrawColor((i & 1) * 4555);
+      disp.setPixels();
+    }
+  }
+
+  {
+    disp.setDrawColor(0x1F << 0);
+    auto pixelPath = disp.beginPixelPath();
+    disp.setPixels(40);
+  }
+  //  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x08<<11); y0 += 13;
 //  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x0A<<11); y0 += 13;
 //  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x10<<11); y0 += 13;
 //  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x14<<11); y0 += 13;
 //  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x18<<11); y0 += 13;
 //  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x1C<<11); y0 += 13;
 //  disp.fillRect(0, y0, RIGHTPOS, y0 + 6, 0x1F<<11); y0 += 13;
-//  while (true) ;
+  while (true);
   uint8_t c = 0;
-  //  disp.fillRect(0, 0, RIGHTPOS, 127, 0);
+  //  disp.fillRect(0, 0, RIGHTPOS, SSD1351_WIDTH, 0);
 //  printf("initDma");
 //  disp.initDma();
 //  printf(" done\n");
 
-  auto absTime = get_absolute_time();
+  //auto absTime = get_absolute_time();
   int i = 0;
 //  while (i<100)
     {
@@ -161,24 +198,25 @@ int main() {
   {
 //      absTime = get_absolute_time();
       for (uint16_t y0 = 0; y0 < 128; y0=y0+1) {
-        uint rgb24 = trueHSV(359*y0 / 127 + clrStart);
-        uint rgb565 = RGB24ToRGB565(rgb24);
+        uint rgb24 = trueHSV(359*y0 / (SSD1351::WIDTH - 1) + clrStart);
         disp.waitTransfer();
-        disp.fillRect(0, y0, 127, y0, rgb565, true);
+        disp.setFillColor(RGB24ToRGB565(rgb24));
+        disp.fillRect(0, y0, 127, y0);
       }
 //    auto tDist = absolute_time_diff_us(absTime, get_absolute_time());
 //    printf("Filling display took %d us\n", (uint)tDist);
 //    stdio_flush();
 //    sleep_ms(1);
 //    //clr++;
-    clrStart = (clrStart + 360 / 128) % 360;   
+    clrStart = (clrStart + 360 / SSD1351::WIDTH) % 360;
   }
   uint16_t clr = 0;
   while (true)
   {
     disp.setStartLine(l);
-    disp.fillRect(0, l, 127, l, clr++);
-    l = (l + 1) % 128;
+    disp.setFillColor( clr++);
+    disp.fillRect(0, l, SSD1351::WIDTH - 1, l);
+    l = (l + 1) % SSD1351::WIDTH;
     sleep_ms(10);
   }
   return 0;

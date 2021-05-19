@@ -40,6 +40,11 @@ public:
     gpio_set_function(_sck, GPIO_FUNC_NULL);
   }
 
+  inline void setBits(uint8_t data_bits)
+  {
+    spi_set_format(*this, data_bits, SPI_CPOL_1, SPI_CPHA_1, SPI_MSB_FIRST);
+  }
+
   inline uint set_baudrate(uint bauds)
   {
     return spi_set_baudrate(*this, bauds);
@@ -67,9 +72,9 @@ public:
     while (spi_is_busy(*this))
       tight_loop_contents();
     while (spi_is_readable(*this))
-      (void)spi_get_hw(*this)->dr;
+      spi_get_hw(*this)->dr;
   }
-  
+
 private:
   uint8_t _mosi;
   uint8_t _sck;
