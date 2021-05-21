@@ -48,7 +48,7 @@ public:
   };
   void setMirror(Mirror m, bool clearScreen = true);
 
-  void setAngle(uint8_t angle); // min. angle = 360/256 = 1.41°
+  void setAngle(uint8_t angle); // min. angle = 360/256 = 1.41Â°
 
   void setDrawColor(uint16_t clr);
   void setFillColor(uint16_t clr);
@@ -68,7 +68,12 @@ public:
   // fills the current window with fillColor
   void fill(bool wait = true);
 
-  void bitblt(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint16_t const* data, bool wait = true);
+  // x, y: display position of the sprite
+  // data: sprite memory buffer
+  // w, h: size of the sprite
+  // scale: a zoom factor, positive to zoom up, or negative to scale down
+  // wait: flag is ignored for abs(scaling) > 1
+  void drawSprite(uint8_t x, uint8_t y, uint16_t const* data, uint8_t w, uint8_t h, int8_t scale, bool wait = true);
 
   enum class StandBy : uint8_t
   {

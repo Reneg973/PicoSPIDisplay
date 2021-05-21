@@ -282,36 +282,86 @@ struct SSD1351Priv
 #endif
   }
 
-  void bitblt(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint16_t const* data, bool wait)
-  {
-    _dmaTransfer.reset();
-    setRegion(x0, y0, x1, y1);
-    if (auto chan = DMAChannel(true))
-    {
-      dma_channel_config cfg = { 0 };
+  void texture_mapping_setup(const uint16_t *texture, uint texture_width_bits, uint texture_height_bits, uint uv_fractional_bits) {
+    texture_width_bits *= sizeof(uint16_t); // texture is 2 bytes!
+//    texture_height_bits <<= 1;
+    interp_config cfg = interp_default_config();
+    // set add_raw flag to use raw (un-shifted and un-masked) lane accumulator value when adding
+    // it to the lane base to make the lane result
+    interp_config_set_add_raw(&cfg, true);
+    interp_config_set_shift(&cfg, uv_fractional_bits);
+    interp_config_set_mask(&cfg, 0, texture_width_bits - 1);
+    interp_set_config(interp0, 0, &cfg);
 
-      channel_config_set_chain_to(&cfg, chan);
-      channel_config_set_dreq(&cfg, DREQ_SPI0_TX);
-      channel_config_set_enable(&cfg, true);
-      channel_config_set_irq_quiet(&cfg, true);
-      channel_config_set_read_increment(&cfg, true);
-      channel_config_set_transfer_data_size(&cfg, DMA_SIZE_16);
-      dma_channel_hw_addr(chan)->al1_ctrl = channel_config_get_ctrl_value(&cfg);
-      dma_channel_configure(chan, &cfg, &spi_get_hw(_spiOut)->dr, data, _regionSize, true);
-      auto finishTransfer = [this, chan = chan.release()]()
-        {
-          dma_channel_wait_for_finish_blocking(chan);
-          // when DMA finished, this doesn't mean SPI has finished, so wait for it
-          _spiOut.waitTransfer();
-          _spiOut.setBits(8);
-          dma_channel_unclaim(chan);
-        };
-      
-      if (wait)
-        finishTransfer();
-      else
-        _dmaTransfer.reset(finishTransfer);
+    interp_config_set_shift(&cfg, uv_fractional_bits - texture_width_bits);
+    interp_config_set_mask(&cfg, texture_width_bits, texture_width_bits + texture_height_bits - 1);
+    interp_set_config(interp0, 1, &cfg);
+
+    interp0->base[2] = (uintptr_t)texture;
+  }
+
+  void texture_mapped_span(uint16_t *output, uint32_t u, uint32_t v, uint32_t du, uint32_t dv, uint count) {
+    // u, v are texture coordinates in fixed point with uv_fractional_bits fractional bits
+    // du, dv are texture coordinate steps across the span in same fixed point.
+    interp0->accum[0] = u;
+    interp0->base[0] = du;
+    interp0->accum[1] = v;
+    interp0->base[1] = dv;
+    for (uint i = 0; i < count; i++) {
+      // equivalent to
+      // uint32_t sm_result0 = (accum0 >> uv_fractional_bits) & (1 << (texture_width_bits - 1);
+      // uint32_t sm_result1 = (accum1 >> uv_fractional_bits) & (1 << (texture_height_bits - 1);
+      // uint8_t *address = texture + sm_result0 + (sm_result1 << texture_width_bits);
+      // output[i] = *address;
+      // accum0 = du + accum0;
+      // accum1 = dv + accum1;
+
+      // result2 is the texture address for the current pixel;
+      // popping the result advances to the next iteration
+      output[i] = *(uint16_t *) interp0->pop[2];
     }
+  }
+
+  void drawSprite(uint8_t x, uint8_t y, uint16_t const* data, uint8_t w, uint8_t h, int8_t scale, bool wait)
+  {
+    if (abs(scale) <= 1)
+    {
+      _dmaTransfer.reset();
+      setRegion(x, y, x+w-1, y+h-1);
+      if (auto chan = DMAChannel(true))
+      {
+        dma_channel_config cfg = { 0 };
+
+        channel_config_set_chain_to(&cfg, chan);
+        channel_config_set_dreq(&cfg, DREQ_SPI0_TX);
+        channel_config_set_enable(&cfg, true);
+        channel_config_set_irq_quiet(&cfg, true);
+        channel_config_set_read_increment(&cfg, true);
+        channel_config_set_transfer_data_size(&cfg, DMA_SIZE_16);
+        dma_channel_hw_addr(chan)->al1_ctrl = channel_config_get_ctrl_value(&cfg);
+        dma_channel_configure(chan, &cfg, &spi_get_hw(_spiOut)->dr, data, _regionSize, true);
+        auto finishTransfer = [this, chan = chan.release()]()
+          {
+            dma_channel_wait_for_finish_blocking(chan);
+            // when DMA finished, this doesn't mean SPI has finished, so wait for it
+            _spiOut.waitTransfer();
+            _spiOut.setBits(8);
+            dma_channel_unclaim(chan);
+          };
+
+        if (wait)
+          finishTransfer();
+        else
+          _dmaTransfer.reset(finishTransfer);
+      }
+      return;
+    }
+    const uint ACCUM_SHIFT = 16;
+    interp_claim_lane_mask(interp0, 3u);
+    texture_mapping_setup(data, w, h, ACCUM_SHIFT);
+    uint16_t out;
+    texture_mapped_span(&out, 0, 0, (1 << ACCUM_SHIFT) / 2, (1 << ACCUM_SHIFT) / 2, 1);
+    interp_unclaim_lane(interp0, 3u);
   }
 
   SPIOut _spiOut;
@@ -405,11 +455,10 @@ void SSD1351::waitTransfer()
   p._dmaTransfer.reset();
 }
 
-void SSD1351::bitblt(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1, uint16_t const* data, bool wait)
+void SSD1351::drawSprite(uint8_t x, uint8_t y, uint16_t const* data, uint8_t w, uint8_t h, int8_t scale, bool wait)
 {
   auto& p = *reinterpret_cast<SSD1351Priv*>(_priv);
-  p.setRegion(x0, y0, x1, y1);
-  p.bitblt(x0, y0, x1, y1, data, wait);
+  p.drawSprite(x, y, data, w, h, scale, wait);
 }
 
 void SSD1351::invertDisplay(bool inverted)
@@ -622,9 +671,9 @@ void SSD1351::setAngle(uint8_t angle)
 #define UNIT_LSB 16
 #define LOG2_DISPLAY_SIZE 7
   interp_config lane0_cfg = interp_default_config();
-  interp_config_set_shift(&lane0_cfg, UNIT_LSB - 1);  // -1 because 2 bytes per pixel
+  interp_config_set_shift(&lane0_cfg, UNIT_LSB - 1);   // -1 because 2 bytes per pixel
   interp_config_set_mask(&lane0_cfg, 1, 1 + (LOG2_DISPLAY_SIZE - 1));
-  interp_config_set_add_raw(&lane0_cfg, true);  // Add full accumulator to base with each POP
+  interp_config_set_add_raw(&lane0_cfg, true);   // Add full accumulator to base with each POP
   interp_config lane1_cfg = interp_default_config();
   interp_config_set_shift(&lane1_cfg, UNIT_LSB - (1 + LOG2_DISPLAY_SIZE));
   interp_config_set_mask(&lane1_cfg, 1 + LOG2_DISPLAY_SIZE, 1 + (2 * LOG2_DISPLAY_SIZE - 1));
@@ -632,26 +681,29 @@ void SSD1351::setAngle(uint8_t angle)
 
   interp_set_config(interp0, 0, &lane0_cfg);
   interp_set_config(interp0, 1, &lane1_cfg);
-//  interp0->base[2] = (uint32_t) raspberry_256x256;
+  //  interp0->base[2] = (uint32_t) raspberry_256x256;
 
-  float theta = 0.f;
-  float theta_max = 2.f * (float) M_PI;
-  while (1) {
-    theta += 0.02f;
-    if (theta > theta_max)
-      theta -= theta_max;
-    int32_t rotate[4] = {
-      cosf(theta) * (1 << UNIT_LSB),
-      -sinf(theta) * (1 << UNIT_LSB),
-      sinf(theta) * (1 << UNIT_LSB),
-      cosf(theta) * (1 << UNIT_LSB)
-    };
-    interp0->base[0] = rotate[0];
-    interp0->base[1] = rotate[2];
-    st7789_start_pixels(pio, sm);
-    for (int y = 0; y < SCREEN_HEIGHT; ++y) {
-      interp0->accum[0] = rotate[1] * y;
-      interp0->accum[1] = rotate[3] * y;
-      for (int x = 0; x < SCREEN_WIDTH; ++x) {
-        uint16_t colour = *(uint16_t *)(interp0->pop[2]);
-      }
+//  float theta = 0.f;
+//  float theta_max = 2.f * (float) M_PI;
+//  while (1) {
+//    theta += 0.02f;
+//    if (theta > theta_max)
+//      theta -= theta_max;
+//    int32_t rotate[4] = {
+//      cosf(theta) * (1 << UNIT_LSB),
+//      -sinf(theta) * (1 << UNIT_LSB),
+//      sinf(theta) * (1 << UNIT_LSB),
+//      cosf(theta) * (1 << UNIT_LSB)
+//    };
+//    interp0->base[0] = rotate[0];
+//    interp0->base[1] = rotate[2];
+//    st7789_start_pixels(pio, sm);
+//    for (int y = 0; y < SCREEN_HEIGHT; ++y) {
+//      interp0->accum[0] = rotate[1] * y;
+//      interp0->accum[1] = rotate[3] * y;
+//      for (int x = 0; x < SCREEN_WIDTH; ++x) {
+//        uint16_t colour = *(uint16_t *)(interp0->pop[2]);
+//      }
+//    }
+//  }
+}
