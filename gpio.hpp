@@ -5,6 +5,8 @@
 class GPIOMask
 {
 protected:
+  GPIOMask() = delete;
+
   explicit GPIOMask(uint gpio)
     : _gpio_mask(1ul << gpio)
   {
