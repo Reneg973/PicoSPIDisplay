@@ -4,10 +4,6 @@
 class DMAChannel
 {
 public:
-  DMAChannel() = delete;
-  DMAChannel(const DMAChannel&) = delete;
-  DMAChannel& operator=(DMAChannel&) = delete;
-
   explicit DMAChannel(bool bRequired = true)
   {
     _chan = dma_claim_unused_channel(bRequired);
@@ -65,5 +61,9 @@ public:
   }
 
 private:
+  DMAChannel() = delete;
+  DMAChannel(const DMAChannel&) = delete;
+  DMAChannel& operator=(DMAChannel&) = delete;
+
   uint8_t _chan;
 };

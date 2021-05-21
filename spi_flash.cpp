@@ -24,27 +24,13 @@
 extern void initHeartBeat();
 
 
-template<typename T, uint8_t ...>
-class Bus
-{
-public:
-  Bus()
-  {
-  }
-
-  Bus operator <<(T const& v)
-  {
-    return *this;
-  }
-};
-
 constexpr uint8_t HSVlights[] = 
 {  0,   4,   8,  13,  17,  21,  25,  30,  34,  38,  42,  47,  51,  55,  59,  64,
   68,  72,  76,  81,  85,  89,  93,  98, 102, 106, 110, 115, 119, 123, 127, 132,
  136, 140, 144, 149, 153, 157, 161, 166, 170, 174, 178, 183, 187, 191, 195,
  200, 204,208, 212, 217, 221, 225, 229, 234, 238, 242, 246, 251, 255};
 
-constexpr uint trueHSV(int angle)
+constexpr uint Hue2RGB(int angle)
 {
   uint8_t red=0, green=0, blue=0;
   angle %= 360;
@@ -97,7 +83,7 @@ void core1()
 }
 
 int main() {
-  sleep_ms(20); // for SPI display to suppress bouncing effects
+  sleep_ms(20); // for SPI display to suppress bouncing effects when pressing reset
   // Enable UART so we can print status output
 //  change_peri_clk();
   stdio_init_all();
@@ -198,7 +184,7 @@ int main() {
   {
 //      absTime = get_absolute_time();
       for (uint16_t y0 = 0; y0 < 128; y0=y0+1) {
-        uint rgb24 = trueHSV(359*y0 / (SSD1351::WIDTH - 1) + clrStart);
+        uint rgb24 = Hue2RGB(359*y0 / (SSD1351::WIDTH - 1) + clrStart);
         disp.waitTransfer();
         disp.setFillColor(RGB24ToRGB565(rgb24));
         disp.fillRect(0, y0, 127, y0);
